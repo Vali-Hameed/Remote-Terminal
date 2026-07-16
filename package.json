@@ -1,0 +1,17 @@
+{
+  "name": "remote-terminal-mirroring",
+  "version": "1.0.0",
+  "description": "Boilerplate for a remote terminal mirroring application over Tailscale.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "private": true
+}
