@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Boilerplate for a remote terminal mirroring application over Tailscale.",
   "main": "server.js",
+  "bin": {
+    "rterm": "client.js"
+  },
   "scripts": {
     "start": "node server.js"
   },
