@@ -365,8 +365,12 @@ function attachToSession(sessionId) {
   let touchStartY = 0;
   let touchStartX = 0;
   let lastTouchY = 0;
+  let lastTouchX = 0;
   let lastTouchTime = 0;
   let touchAccumulator = 0;
+  let keyboardAccumulatorX = 0;
+  let keyboardAccumulatorY = 0;
+  let swipeAxis = null;
   let velocityY = 0;
   let momentumRAF = null;
   let didSwipe = false;
@@ -389,8 +393,12 @@ function attachToSession(sessionId) {
       touchStartY = e.touches[0].clientY;
       touchStartX = e.touches[0].clientX;
       lastTouchY = touchStartY;
+      lastTouchX = touchStartX;
       lastTouchTime = performance.now();
       touchAccumulator = 0;
+      keyboardAccumulatorX = 0;
+      keyboardAccumulatorY = 0;
+      swipeAxis = null;
       velocityY = 0;
       didSwipe = false;
       stopMomentum();
@@ -401,16 +409,53 @@ function attachToSession(sessionId) {
     if (e.touches.length !== 1 || !term) return;
     
     const currentY = e.touches[0].clientY;
+    const currentX = e.touches[0].clientX;
     const diffY = lastTouchY - currentY;
+    const diffX = lastTouchX - currentX;
     
-    if (!didSwipe && Math.abs(currentY - touchStartY) > 10) {
+    if (!didSwipe && (Math.abs(currentY - touchStartY) > 10 || Math.abs(currentX - touchStartX) > 10)) {
       didSwipe = true;
+      // Lock swipe to an axis
+      swipeAxis = Math.abs(currentX - touchStartX) > Math.abs(currentY - touchStartY) ? 'x' : 'y';
     }
     
     if (didSwipe) {
       e.preventDefault();
     }
     
+    if (isKeyboardMode) {
+      if (didSwipe && swipeAxis) {
+        if (swipeAxis === 'x') {
+          keyboardAccumulatorX += diffX;
+          const xThreshold = 12; // Every 12 pixels = 1 arrow key
+          if (Math.abs(keyboardAccumulatorX) >= xThreshold) {
+            const keys = Math.trunc(Math.abs(keyboardAccumulatorX) / xThreshold);
+            keyboardAccumulatorX = keyboardAccumulatorX % xThreshold;
+            const char = diffX > 0 ? '\x1b[D' : '\x1b[C'; // Left : Right
+            const payload = char.repeat(keys);
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: 'pty_input', data: payload }));
+            }
+          }
+        } else if (swipeAxis === 'y') {
+          keyboardAccumulatorY += diffY;
+          const yThreshold = 25; // Slower for up/down history
+          if (Math.abs(keyboardAccumulatorY) >= yThreshold) {
+            const keys = Math.trunc(Math.abs(keyboardAccumulatorY) / yThreshold);
+            keyboardAccumulatorY = keyboardAccumulatorY % yThreshold;
+            const char = diffY > 0 ? '\x1b[A' : '\x1b[B'; // Up : Down
+            const payload = char.repeat(keys);
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: 'pty_input', data: payload }));
+            }
+          }
+        }
+      }
+      lastTouchX = currentX;
+      lastTouchY = currentY;
+      return;
+    }
+
     if (!isKeyboardMode) {
       const now = performance.now();
       const dt = now - lastTouchTime;
@@ -435,28 +480,7 @@ function attachToSession(sessionId) {
   }, { passive: false });
   
   touchOverlay.addEventListener('touchend', (e) => {
-    if (isKeyboardMode && didSwipe) {
-      // In keyboard mode, determine swipe direction and send arrow key
-      const endY = e.changedTouches[0].clientY;
-      const endX = e.changedTouches[0].clientX;
-      const diffY = touchStartY - endY;
-      const diffX = endX - touchStartX;
-      const absDiffY = Math.abs(diffY);
-      const absDiffX = Math.abs(diffX);
-      
-      if (absDiffX > absDiffY && absDiffX > 30) {
-        // Horizontal swipe
-        const arrowKey = diffX > 0 ? '\x1b[C' : '\x1b[D'; // Right : Left
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'pty_input', data: arrowKey }));
-        }
-      } else if (absDiffY > absDiffX && absDiffY > 30) {
-        // Vertical swipe
-        const arrowKey = diffY > 0 ? '\x1b[A' : '\x1b[B'; // Up : Down
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'pty_input', data: arrowKey }));
-        }
-      }
+    if (isKeyboardMode) {
       return;
     }
     
