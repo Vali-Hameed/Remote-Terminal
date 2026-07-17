@@ -23,8 +23,9 @@
       --text-primary: #fafafa;
       --text-secondary: #a1a1a1;
       --text-tertiary: #666666;
-      --accent: #ffffff;
-      --accent-subtle: rgba(255, 255, 255, 0.08);
+      --accent: #a855f7;
+      --accent-hover: #9333ea;
+      --accent-subtle: rgba(168, 85, 247, 0.12);
       --danger: #e5484d;
       --danger-subtle: rgba(229, 72, 77, 0.12);
       --success: #30a46c;
@@ -150,15 +151,15 @@
     /* Buttons */
     .btn {
       width: 100%;
-      background: var(--text-primary);
-      color: var(--bg);
+      background: var(--accent);
+      color: #fff;
       border: none;
       border-radius: 10px;
       padding: 13px 16px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s ease;
+      transition: background 0.15s ease;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -166,11 +167,11 @@
     }
 
     .btn:hover {
-      opacity: 0.85;
+      background: var(--accent-hover);
     }
 
     .btn:active {
-      opacity: 0.7;
+      opacity: 0.85;
     }
 
     .btn-danger {
@@ -179,13 +180,13 @@
     }
 
     .btn-secondary {
-      background: var(--accent-subtle);
+      background: rgba(255, 255, 255, 0.06);
       border: 1px solid var(--border);
       color: var(--text-primary);
     }
 
     .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.1);
     }
 
     /* Sessions View */
@@ -239,7 +240,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--text-secondary);
+      color: var(--accent);
     }
 
     .session-name {
@@ -334,11 +335,11 @@
       font-family: 'JetBrains Mono', monospace;
       font-size: 13px;
       font-weight: 500;
-      color: var(--text-secondary);
+      color: var(--accent);
       background: var(--accent-subtle);
       padding: 4px 10px;
       border-radius: 6px;
-      border: 1px solid var(--border);
+      border: 1px solid rgba(168, 85, 247, 0.2);
     }
 
     .terminal-actions {
