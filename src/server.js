@@ -21,6 +21,7 @@
 const https = require('https');
 const fs = require('fs');
 const os = require('os');
+const path = require('path');
 const crypto = require('crypto');
 const { exec } = require('child_process');
 const WebSocket = require('ws');
@@ -146,8 +147,10 @@ try {
     key: fs.readFileSync(keyPath)
   };
 } catch (err) {
-  console.error('[CRITICAL ERROR] Failed to load SSL files (key.pem / cert.pem).');
-  console.error('Please generate self-signed certificates. See setup.md for instructions.');
+  console.error('[CRITICAL ERROR] Failed to load SSL files:', err.message);
+  console.error('Paths checked:');
+  console.error('- Cert:', path.join(__dirname, '../certs/cert.pem'));
+  console.error('- Key:', path.join(__dirname, '../certs/key.pem'));
   process.exit(1);
 }
 
