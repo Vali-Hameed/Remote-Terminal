@@ -11,7 +11,9 @@ This architecture was specifically built to provide a **native Windows alternati
 - **OTP Authentication:** Uses a One-Time Password (OTP) for initial device pairing, generating a cryptographically signed HMAC token for subsequent access.
 - **Native Windows PTY:** Real-time terminal I/O streaming using native Windows PowerShell and `node-pty`. No WSL required!
 - **Global `rterm` CLI:** Start mirrored sessions instantly from any folder using the `rterm` command.
+- **Scrollback History:** Features an in-memory 200KB scrollback buffer that retains thousands of lines of terminal history even if you refresh your mobile browser.
 - **Multi-Session Support:** Attach to multiple mirrored sessions independently and view them side-by-side.
+- **Mobile Swipe Gestures:** Optimized for mobile use with an innovative "Keyboard Mode" that maps touchscreen swipes to arrow keys (perfect for cycling command history).
 - **Access Revocation:** Supports both remote revocation (from the mobile device) and local recovery revocation (from the host).
 
 ## Prerequisites
@@ -74,16 +76,24 @@ To follow defense-in-depth security best practices, restrict port `8443` on your
    - Open a *new* Windows Terminal window anywhere on your PC.
    - Run the command `rterm <session_name>` (e.g. `rterm myscript`).
    - The session will immediately appear on your phone, and all input/output will be mirrored perfectly.
-   - You can also click the **New Windows Session** button directly in the web UI.
+   - You can also click the **New Terminal** button directly in the web UI.
 
-4. **Managing Sessions:**
+4. **Mobile Controls & Gestures:**
+   - **Scroll Mode (Default):** Swiping anywhere on the terminal smoothly scrolls up and down through your command history.
+   - **Keyboard Mode:** Tap the purple Floating Action Button (FAB) in the bottom right corner to activate Keyboard Mode. In this mode, scrolling is locked, and swipes are converted to arrow keys:
+     - **Swipe Left / Right:** Moves the text cursor left or right.
+     - **Swipe Up / Down:** Cycles through your previous terminal command history.
+   - **Virtual Keyboard:** Tapping the FAB also forces your phone's native virtual keyboard to pop up.
+
+5. **Managing Sessions:**
    - **Detaching:** If you want to close the terminal window on your laptop but leave the script running in the background, press `Ctrl + ]`. The session will remain active and visible on your phone.
    - **Deleting / Exiting:** To completely kill a session and remove it from the active list, just type `exit` inside the session and press Enter. 
 
-## Revoking Access
+## Revoking Access & Troubleshooting
 
-- **Remote Revocation:** Tap **Revoke** in the terminal UI or **Revoke Credentials** on the session picker to instantly force-close connections on your device.
+- **Remote Revocation:** Tap the logout icon in the terminal UI or **Logout** on the session picker to instantly force-close connections on your device.
 - **Local Revocation:** If you lose your device, type `revoke-all` in the host terminal running the server and press `Enter` to terminate all tokens and WebSockets globally.
+- **Retrieving OTP:** If your terminal has scrolled too far and you need the OTP pairing code again, type `show-otp` in the host terminal and press `Enter` to display the current active code.
 
 ## License
 Refer to the `LICENSE` file for more details.
