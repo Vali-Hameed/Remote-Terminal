@@ -367,9 +367,9 @@ function attachToSession(sessionId) {
   term.loadAddon(fitAddon);
   term.open(container);
   
-  // Use overlay only for keyboard mode swipe gestures
+  // Mobile touch scrolling via transparent overlay.
   const touchOverlay = document.createElement('div');
-  touchOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;touch-action:none;pointer-events:none;';
+  touchOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;touch-action:none;';
   container.style.position = 'relative';
   container.appendChild(touchOverlay);
   
@@ -377,11 +377,27 @@ function attachToSession(sessionId) {
   let touchStartX = 0;
   let lastTouchY = 0;
   let lastTouchX = 0;
+  let lastTouchTime = 0;
+  let touchAccumulator = 0;
   let keyboardAccumulatorX = 0;
   let keyboardAccumulatorY = 0;
   let swipeAxis = null;
+  let velocityY = 0;
+  let momentumRAF = null;
   let didSwipe = false;
   let isKeyboardMode = false;
+  
+  function scrollTerminal(linesToScroll) {
+    if (!term) return;
+    term.scrollLines(linesToScroll);
+  }
+  
+  function stopMomentum() {
+    if (momentumRAF) {
+      cancelAnimationFrame(momentumRAF);
+      momentumRAF = null;
+    }
+  }
 
   touchOverlay.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
@@ -389,10 +405,14 @@ function attachToSession(sessionId) {
       touchStartX = e.touches[0].clientX;
       lastTouchY = touchStartY;
       lastTouchX = touchStartX;
+      lastTouchTime = performance.now();
+      touchAccumulator = 0;
       keyboardAccumulatorX = 0;
       keyboardAccumulatorY = 0;
       swipeAxis = null;
+      velocityY = 0;
       didSwipe = false;
+      stopMomentum();
     }
   }, { passive: true });
   
@@ -444,40 +464,71 @@ function attachToSession(sessionId) {
       }
       lastTouchX = currentX;
       lastTouchY = currentY;
+      return;
+    }
+
+    // Scroll mode
+    if (!isKeyboardMode) {
+      const now = performance.now();
+      const dt = now - lastTouchTime;
+      
+      if (dt > 0) {
+        const instantV = diffY / dt;
+        // Smooth velocity calculation
+        velocityY = velocityY * 0.4 + instantV * 0.6;
+      }
+      
+      lastTouchY = currentY;
+      lastTouchTime = now;
+      
+      touchAccumulator += diffY;
+      const lineThreshold = 2; // Reduced from 4 for faster scrolling
+      
+      if (Math.abs(touchAccumulator) >= lineThreshold) {
+        const lines = Math.trunc(touchAccumulator / lineThreshold);
+        touchAccumulator = touchAccumulator % lineThreshold;
+        scrollTerminal(lines);
+      }
     }
   }, { passive: false });
   
-  touchOverlay.addEventListener('touchend', (e) => {
-    if (isKeyboardMode) {
-      return;
-    }
-    
-    // Scroll mode: momentum scrolling
-    if (Math.abs(velocityY) > 0.08) {
-      let v = velocityY;
-      let acc = 0;
-      let lastFrame = performance.now();
+  function applyMomentum() {
+    if (Math.abs(velocityY) > 0.05) {
+      touchAccumulator += velocityY * 16; // approx 16ms per frame
+      const lineThreshold = 2;
       
-      function momentumFrame(now) {
-        const elapsed = now - lastFrame;
-        lastFrame = now;
-        
-        v *= 0.97;
-        if (Math.abs(v) < 0.02) { momentumRAF = null; return; }
-        
-        acc += v * elapsed;
-        const lineThreshold = 4;
-        if (Math.abs(acc) >= lineThreshold) {
-          const lines = Math.trunc(acc / lineThreshold);
-          acc = acc % lineThreshold;
-          scrollTerminal(lines);
-        }
-        momentumRAF = requestAnimationFrame(momentumFrame);
+      if (Math.abs(touchAccumulator) >= lineThreshold) {
+        const lines = Math.trunc(touchAccumulator / lineThreshold);
+        touchAccumulator = touchAccumulator % lineThreshold;
+        scrollTerminal(lines);
       }
-      momentumRAF = requestAnimationFrame(momentumFrame);
+      
+      velocityY *= 0.92; // Friction
+      momentumRAF = requestAnimationFrame(applyMomentum);
+    } else {
+      velocityY = 0;
     }
-  });
+  }
 
+  touchOverlay.addEventListener('touchend', (e) => {
+    if (!isKeyboardMode && !didSwipe) {
+      // Tap without swipe -> trigger click
+    } else if (!isKeyboardMode && didSwipe) {
+      momentumRAF = requestAnimationFrame(applyMomentum);
+    }
+    swipeAxis = null;
+  });
+  
+  // Handle taps on the overlay
+  touchOverlay.addEventListener('click', (e) => {
+    touchOverlay.style.pointerEvents = 'none';
+    term.focus();
+    // Attempt to click the element underneath (xterm's textarea)
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (el) el.click();
+    setTimeout(() => { touchOverlay.style.pointerEvents = ''; }, 100);
+  });
+  
   // FAB Keyboard button click handler
   const fabKeyboard = document.getElementById('fab-keyboard');
   if (fabKeyboard) {
@@ -489,19 +540,19 @@ function attachToSession(sessionId) {
         fabKeyboard.style.color = '#fff';
         fabKeyboard.style.borderColor = 'var(--accent, #a855f7)';
         fabKeyboard.title = 'Keyboard Mode (swipe = arrow keys)';
-        touchOverlay.style.pointerEvents = 'auto'; // Enable gesture interception
       } else {
         fabKeyboard.style.background = '';
         fabKeyboard.style.color = '';
         fabKeyboard.style.borderColor = '';
         fabKeyboard.title = 'Open Keyboard';
-        touchOverlay.style.pointerEvents = 'none'; // Re-enable native terminal scrolling
       }
       
       // Focus terminal and click hidden textarea to force mobile keyboard
+      touchOverlay.style.pointerEvents = 'none';
       term.focus();
       const textarea = document.querySelector('.xterm-helper-textarea');
       if (textarea) textarea.click();
+      setTimeout(() => { touchOverlay.style.pointerEvents = ''; }, 500);
     });
   }
   
