@@ -42,6 +42,7 @@ const sessionOtp = crypto.randomInt(100000, 999999).toString();
 const activeNonces = new Set();
 const otpAttempts = new Map(); // IP -> { count, cooldownUntil }
 const activeSessions = new Map();  // sessionId -> ptyProcess
+const scrollbackBuffers = new Map(); // sessionId -> string (max 200KB)
 
 // CLI Admin Token
 const adminToken = crypto.randomBytes(32).toString('hex');
@@ -224,6 +225,7 @@ process.stdin.on('data', (data) => {
       }
     }
     activeSessions.clear();
+    scrollbackBuffers.clear();
     console.log('[REVOCATION] All connected sessions and access tokens successfully terminated.');
   } else if (command === 'show-otp') {
     console.log(`\n[AUTH] Current Remote Pairing Code (OTP): ${sessionOtp}\n`);
@@ -420,8 +422,14 @@ wss.on('connection', (ws, req) => {
 
         activeSessions.set(targetSessionId, ptyProcess);
 
-        // Pipe PTY output to all attached clients
+        // Pipe PTY output to all attached clients and maintain scrollback buffer
         ptyProcess.onData((data) => {
+          let buf = (scrollbackBuffers.get(targetSessionId) || '') + data;
+          if (buf.length > 200000) {
+            buf = buf.substring(buf.length - 200000);
+          }
+          scrollbackBuffers.set(targetSessionId, buf);
+          
           for (const client of wss.clients) {
             if (client.attachedSessionId === targetSessionId && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({ type: 'pty_data', data }));
@@ -432,6 +440,7 @@ wss.on('connection', (ws, req) => {
         ptyProcess.onExit(({ exitCode }) => {
           console.log(`[PTY] Session "${targetSessionId}" exited (Code: ${exitCode}).`);
           activeSessions.delete(targetSessionId);
+          scrollbackBuffers.delete(targetSessionId);
           for (const client of wss.clients) {
             if (client.attachedSessionId === targetSessionId && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({ type: 'pty_exit' }));
@@ -464,8 +473,13 @@ wss.on('connection', (ws, req) => {
       ws.attachedSessionId = targetSessionId;
       console.log(`[PTY] Client ${clientIp} attached to session "${targetSessionId}"`);
 
-      // Optionally send a clear screen or initial message since we don't have scrollback
-      ws.send(JSON.stringify({ type: 'pty_data', data: '\r\n[Attached to session: ' + targetSessionId + ']\r\n' }));
+      // Replay scrollback buffer so the client sees history on refresh/connect
+      const scrollback = scrollbackBuffers.get(targetSessionId) || '';
+      if (scrollback) {
+        ws.send(JSON.stringify({ type: 'pty_data', data: scrollback }));
+      } else {
+        ws.send(JSON.stringify({ type: 'pty_data', data: '\r\n[Attached to session: ' + targetSessionId + ']\r\n' }));
+      }
       return;
     }
 
