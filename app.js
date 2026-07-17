@@ -267,7 +267,7 @@ function renderSessions(sessions) {
       <div class="empty-state">
         <p>No active Windows sessions found.</p>
         <p style="font-size: 12px; margin-top: 6px; color: var(--text-muted);">
-          Click "New Windows Session" to create one.
+          Click "New Terminal" to create one.
         </p>
       </div>
     `;
