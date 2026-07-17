@@ -356,9 +356,9 @@ function attachToSession(sessionId) {
   term.loadAddon(fitAddon);
   term.open(container);
   
-  // Mobile touch scrolling via transparent overlay.
+  // Use overlay only for keyboard mode swipe gestures
   const touchOverlay = document.createElement('div');
-  touchOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;touch-action:none;';
+  touchOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;touch-action:none;pointer-events:none;';
   container.style.position = 'relative';
   container.appendChild(touchOverlay);
   
@@ -366,42 +366,22 @@ function attachToSession(sessionId) {
   let touchStartX = 0;
   let lastTouchY = 0;
   let lastTouchX = 0;
-  let lastTouchTime = 0;
-  let touchAccumulator = 0;
   let keyboardAccumulatorX = 0;
   let keyboardAccumulatorY = 0;
   let swipeAxis = null;
-  let velocityY = 0;
-  let momentumRAF = null;
   let didSwipe = false;
   let isKeyboardMode = false;
-  
-  function scrollTerminal(linesToScroll) {
-    if (!term) return;
-    term.scrollLines(linesToScroll);
-  }
-  
-  function stopMomentum() {
-    if (momentumRAF) {
-      cancelAnimationFrame(momentumRAF);
-      momentumRAF = null;
-    }
-  }
-  
+
   touchOverlay.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
       touchStartY = e.touches[0].clientY;
       touchStartX = e.touches[0].clientX;
       lastTouchY = touchStartY;
       lastTouchX = touchStartX;
-      lastTouchTime = performance.now();
-      touchAccumulator = 0;
       keyboardAccumulatorX = 0;
       keyboardAccumulatorY = 0;
       swipeAxis = null;
-      velocityY = 0;
       didSwipe = false;
-      stopMomentum();
     }
   }, { passive: true });
   
@@ -453,29 +433,6 @@ function attachToSession(sessionId) {
       }
       lastTouchX = currentX;
       lastTouchY = currentY;
-      return;
-    }
-
-    if (!isKeyboardMode) {
-      const now = performance.now();
-      const dt = now - lastTouchTime;
-      
-      if (dt > 0) {
-        const instantV = diffY / dt;
-        velocityY = velocityY * 0.6 + instantV * 0.4;
-      }
-      
-      lastTouchY = currentY;
-      lastTouchTime = now;
-      
-      touchAccumulator += diffY;
-      const lineThreshold = 4;
-      
-      if (Math.abs(touchAccumulator) >= lineThreshold) {
-        const lines = Math.trunc(touchAccumulator / lineThreshold);
-        touchAccumulator = touchAccumulator % lineThreshold;
-        scrollTerminal(lines);
-      }
     }
   }, { passive: false });
   
@@ -510,17 +467,7 @@ function attachToSession(sessionId) {
     }
   });
 
-  // Handle desktop clicks / normal taps on the overlay
-  touchOverlay.addEventListener('click', (e) => {
-    touchOverlay.style.pointerEvents = 'none';
-    term.focus();
-    // Attempt to click the element underneath (xterm's textarea)
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    if (el) el.click();
-    setTimeout(() => { touchOverlay.style.pointerEvents = ''; }, 100);
-  });
-
-  // FAB Keyboard button click handler — toggles between scroll mode and keyboard mode
+  // FAB Keyboard button click handler
   const fabKeyboard = document.getElementById('fab-keyboard');
   if (fabKeyboard) {
     fabKeyboard.addEventListener('click', () => {
@@ -531,19 +478,19 @@ function attachToSession(sessionId) {
         fabKeyboard.style.color = '#fff';
         fabKeyboard.style.borderColor = 'var(--accent, #a855f7)';
         fabKeyboard.title = 'Keyboard Mode (swipe = arrow keys)';
+        touchOverlay.style.pointerEvents = 'auto'; // Enable gesture interception
       } else {
         fabKeyboard.style.background = '';
         fabKeyboard.style.color = '';
         fabKeyboard.style.borderColor = '';
         fabKeyboard.title = 'Open Keyboard';
+        touchOverlay.style.pointerEvents = 'none'; // Re-enable native terminal scrolling
       }
       
-      // Also open the keyboard
-      touchOverlay.style.pointerEvents = 'none';
+      // Focus terminal and click hidden textarea to force mobile keyboard
       term.focus();
       const textarea = document.querySelector('.xterm-helper-textarea');
       if (textarea) textarea.click();
-      setTimeout(() => { touchOverlay.style.pointerEvents = ''; }, 500);
     });
   }
   
