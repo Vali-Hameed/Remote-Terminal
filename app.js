@@ -363,12 +363,14 @@ function attachToSession(sessionId) {
   container.appendChild(touchOverlay);
   
   let touchStartY = 0;
+  let touchStartX = 0;
   let lastTouchY = 0;
   let lastTouchTime = 0;
   let touchAccumulator = 0;
   let velocityY = 0;
   let momentumRAF = null;
   let didSwipe = false;
+  let isKeyboardMode = false;
   
   function scrollTerminal(linesToScroll) {
     if (!term) return;
@@ -385,6 +387,7 @@ function attachToSession(sessionId) {
   touchOverlay.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
       touchStartY = e.touches[0].clientY;
+      touchStartX = e.touches[0].clientX;
       lastTouchY = touchStartY;
       lastTouchTime = performance.now();
       touchAccumulator = 0;
@@ -430,7 +433,32 @@ function attachToSession(sessionId) {
   }, { passive: false });
   
   touchOverlay.addEventListener('touchend', (e) => {
-    // Basic momentum scrolling
+    if (isKeyboardMode && didSwipe) {
+      // In keyboard mode, determine swipe direction and send arrow key
+      const endY = e.changedTouches[0].clientY;
+      const endX = e.changedTouches[0].clientX;
+      const diffY = touchStartY - endY;
+      const diffX = endX - touchStartX;
+      const absDiffY = Math.abs(diffY);
+      const absDiffX = Math.abs(diffX);
+      
+      if (absDiffX > absDiffY && absDiffX > 30) {
+        // Horizontal swipe
+        const arrowKey = diffX > 0 ? '\x1b[C' : '\x1b[D'; // Right : Left
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'pty_input', data: arrowKey }));
+        }
+      } else if (absDiffY > absDiffX && absDiffY > 30) {
+        // Vertical swipe
+        const arrowKey = diffY > 0 ? '\x1b[A' : '\x1b[B'; // Up : Down
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'pty_input', data: arrowKey }));
+        }
+      }
+      return;
+    }
+    
+    // Scroll mode: momentum scrolling
     if (Math.abs(velocityY) > 0.08) {
       let v = velocityY;
       let acc = 0;
@@ -466,18 +494,29 @@ function attachToSession(sessionId) {
     setTimeout(() => { touchOverlay.style.pointerEvents = ''; }, 100);
   });
 
-  // FAB Keyboard button click handler
+  // FAB Keyboard button click handler — toggles between scroll mode and keyboard mode
   const fabKeyboard = document.getElementById('fab-keyboard');
   if (fabKeyboard) {
     fabKeyboard.addEventListener('click', () => {
-      // Temporarily disable overlay so focus/clicks can pierce through
+      isKeyboardMode = !isKeyboardMode;
+      
+      if (isKeyboardMode) {
+        fabKeyboard.style.background = 'var(--accent, #a855f7)';
+        fabKeyboard.style.color = '#fff';
+        fabKeyboard.style.borderColor = 'var(--accent, #a855f7)';
+        fabKeyboard.title = 'Keyboard Mode (swipe = arrow keys)';
+      } else {
+        fabKeyboard.style.background = '';
+        fabKeyboard.style.color = '';
+        fabKeyboard.style.borderColor = '';
+        fabKeyboard.title = 'Open Keyboard';
+      }
+      
+      // Also open the keyboard
       touchOverlay.style.pointerEvents = 'none';
       term.focus();
-      
-      // Attempt to click the hidden textarea directly to force mobile keyboard
       const textarea = document.querySelector('.xterm-helper-textarea');
       if (textarea) textarea.click();
-      
       setTimeout(() => { touchOverlay.style.pointerEvents = ''; }, 500);
     });
   }
