@@ -411,24 +411,26 @@ function attachToSession(sessionId) {
       e.preventDefault();
     }
     
-    const now = performance.now();
-    const dt = now - lastTouchTime;
-    
-    if (dt > 0) {
-      const instantV = diffY / dt;
-      velocityY = velocityY * 0.6 + instantV * 0.4;
-    }
-    
-    lastTouchY = currentY;
-    lastTouchTime = now;
-    
-    touchAccumulator += diffY;
-    const lineThreshold = 4;
-    
-    if (Math.abs(touchAccumulator) >= lineThreshold) {
-      const lines = Math.trunc(touchAccumulator / lineThreshold);
-      touchAccumulator = touchAccumulator % lineThreshold;
-      scrollTerminal(lines);
+    if (!isKeyboardMode) {
+      const now = performance.now();
+      const dt = now - lastTouchTime;
+      
+      if (dt > 0) {
+        const instantV = diffY / dt;
+        velocityY = velocityY * 0.6 + instantV * 0.4;
+      }
+      
+      lastTouchY = currentY;
+      lastTouchTime = now;
+      
+      touchAccumulator += diffY;
+      const lineThreshold = 4;
+      
+      if (Math.abs(touchAccumulator) >= lineThreshold) {
+        const lines = Math.trunc(touchAccumulator / lineThreshold);
+        touchAccumulator = touchAccumulator % lineThreshold;
+        scrollTerminal(lines);
+      }
     }
   }, { passive: false });
   
