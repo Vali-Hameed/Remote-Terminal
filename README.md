@@ -44,7 +44,7 @@ This architecture was specifically built to provide a **native Windows alternati
 <br>
 
 ```bash
-git clone <repository_url>
+git clone https://github.com/Vali-Hameed/Remote-Terminal.git
 cd Remote-Terminal
 npm install
 ```
