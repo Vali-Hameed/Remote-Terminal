@@ -8,7 +8,7 @@ This architecture was specifically built to provide a **native Windows alternati
 ## Features
 
 - **Tailscale Integration:** Runs securely within your private Tailscale network (Tailnet).
-- **OTP Authentication:** Uses a One-Time Password (OTP) for initial device pairing, generating a cryptographically signed HMAC token for subsequent access.
+- **Strict OTP Authentication:** Uses a One-Time Password (OTP) for initial device pairing. For maximum security, the OTP is strictly single-use and self-destructs the moment it is used, instantly generating a new code for any future devices. Your paired device receives a cryptographically signed HMAC token for 12-hour subsequent access.
 - **Native Windows PTY:** Real-time terminal I/O streaming using native Windows PowerShell and `node-pty`. No WSL required!
 - **Global `rterm` CLI:** Start mirrored sessions instantly from any folder using the `rterm` command.
 - **Scrollback History:** Features an in-memory 200KB scrollback buffer that retains thousands of lines of terminal history even if you refresh your mobile browser.
@@ -71,6 +71,7 @@ To follow defense-in-depth security best practices, restrict port `8443` on your
    - On your mobile device, navigate to `https://<laptop-tailscale-ip>:8443`.
    - Accept the browser's security warning (due to the self-signed certificate).
    - Enter the 6-digit OTP to pair your device.
+   - **Note:** For security, the pairing code is strictly single-use. The moment you pair your device, the code self-destructs. If you need to pair a second device (like an iPad), you must type `show-otp` in the host terminal to reveal the newly generated code.
 
 3. **Creating a Mirrored Session:**
    - Open a *new* Windows Terminal window anywhere on your PC.
