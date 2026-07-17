@@ -1,6 +1,6 @@
 <div align="center">
   <h1>📱 Remote Terminal Mirroring</h1>
-  <p><b>A secure, native Windows alternative to tmux over Tailscale</b></p>
+  <p><b>A native Windows terminal session manager. Detach and monitor over Tailscale.</b></p>
   
   [![Node.js](https://img.shields.io/badge/Node.js-16.0%2B-success.svg)](https://nodejs.org/)
   [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://microsoft.com/windows)
@@ -9,10 +9,10 @@
 
 <br>
 
-A secure, Node.js-based remote terminal mirroring application designed to run natively over Tailscale. It enables you to securely connect to and mirror your Windows terminal sessions from a mobile device or another computer within your private Tailnet.
+A native Windows terminal session manager. It allows you to detach from long-running PowerShell scripts and securely monitor them from your phone or another computer over Tailscale.
 
 ## 🚀 Why `rterm`?
-This architecture was specifically built to provide a **native Windows alternative to `tmux`**. While `tmux` requires running inside WSL on Windows, this application leverages a built-in session manager and the `rterm` CLI tool to provide the exact same terminal multiplexing capabilities directly on Windows. This allows you to open a regular Windows PowerShell, run a command, detach (<kbd>Ctrl</kbd> + <kbd>]</kbd>), and walk away—all while the session stays perfectly alive in the background and mirrors to your phone.
+This architecture was specifically built to solve the problem of backgrounding and remotely monitoring tasks natively on Windows. Instead of relying on complex workarounds or WSL, this application leverages a built-in session manager and the `rterm` CLI tool to provide seamless session persistence. This allows you to open a regular Windows PowerShell, run a command, detach (<kbd>Ctrl</kbd> + <kbd>]</kbd>), and walk away—all while the session stays perfectly alive in the background and mirrors to your phone.
 
 <br>
 
