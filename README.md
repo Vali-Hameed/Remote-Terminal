@@ -1,24 +1,25 @@
 # Remote Terminal Mirroring
 
-A secure, Node.js-based remote terminal mirroring application designed to run over Tailscale. It enables you to securely connect to and mirror your terminal sessions (like `tmux`) from a mobile device or another computer within your private Tailnet.
+A secure, Node.js-based remote terminal mirroring application designed to run natively over Tailscale. It enables you to securely connect to and mirror your Windows terminal sessions from a mobile device or another computer within your private Tailnet.
+
+## Why `rterm`?
+This architecture was specifically built to provide a **native Windows alternative to `tmux`**. While `tmux` requires running inside WSL on Windows, this application leverages a built-in session manager and the `rterm` CLI tool to provide the exact same terminal multiplexing capabilities directly on Windows. This allows you to open a regular Windows PowerShell, run a command, detach (`Ctrl + ]`), and walk away—all while the session stays perfectly alive in the background and mirrors to your phone.
 
 ## Features
 
 - **Tailscale Integration:** Runs securely within your private Tailscale network (Tailnet).
 - **OTP Authentication:** Uses a One-Time Password (OTP) for initial device pairing, generating a cryptographically signed HMAC token for subsequent access.
-- **WebSocket Terminal Stream:** Real-time terminal I/O streaming using `node-pty` and WebSockets.
-- **Multi-Session Support:** Attach to multiple `tmux` sessions independently using a single pairing token and view them side-by-side in different browser tabs.
+- **Native Windows PTY:** Real-time terminal I/O streaming using native Windows PowerShell and `node-pty`. No WSL required!
+- **Global `rterm` CLI:** Start mirrored sessions instantly from any folder using the `rterm` command.
+- **Multi-Session Support:** Attach to multiple mirrored sessions independently and view them side-by-side.
 - **Access Revocation:** Supports both remote revocation (from the mobile device) and local recovery revocation (from the host).
-- **Terminal Scrollback:** Full support for terminal scrollback history.
 
 ## Prerequisites
 
-- **OS:** Linux, macOS, or WSL2 (Windows Subsystem for Linux). Native Windows command prompts are not fully supported by `node-pty` for Unix `tmux` workflows.
-- **Build Tools:** `node-pty` requires native C/C++ bindings.
-  - *Debian/Ubuntu/WSL2:* `sudo apt-get install build-essential python3`
-  - *macOS:* `xcode-select --install`
+- **OS:** Windows.
 - **Tailscale:** Active on both the host and the connecting device.
 - **Node.js:** version 16.0.0 or higher.
+- **Build Tools:** `node-pty` may require Python and Visual Studio Build Tools to compile natively if pre-built binaries aren't available.
 
 ## Installation
 
@@ -27,7 +28,13 @@ A secure, Node.js-based remote terminal mirroring application designed to run ov
    npm install
    ```
 
-2. **Generate an SSL Certificate:**
+2. **Install the global CLI:**
+   Link the package so you can use the `rterm` command anywhere:
+   ```bash
+   npm link
+   ```
+
+3. **Generate an SSL Certificate:**
    Since the app uses secure WebSockets (`wss://`) and HTTPS, generate a self-signed certificate in the project root:
    ```bash
    openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"
@@ -52,6 +59,7 @@ To follow defense-in-depth security best practices, restrict port `8443` on your
 ## Usage
 
 1. **Start the server:**
+   In your `Remote-Terminal` folder, run:
    ```bash
    npm start
    ```
@@ -62,10 +70,15 @@ To follow defense-in-depth security best practices, restrict port `8443` on your
    - Accept the browser's security warning (due to the self-signed certificate).
    - Enter the 6-digit OTP to pair your device.
 
-3. **Managing Sessions:**
-   - Once paired, you'll see a list of active sessions.
-   - Click the **New Tab** icon next to any session to open it in a new browser tab.
-   - You can toggle between multiple `tmux` sessions side-by-side.
+3. **Creating a Mirrored Session:**
+   - Open a *new* Windows Terminal window anywhere on your PC.
+   - Run the command `rterm <session_name>` (e.g. `rterm myscript`).
+   - The session will immediately appear on your phone, and all input/output will be mirrored perfectly.
+   - You can also click the **New Windows Session** button directly in the web UI.
+
+4. **Managing Sessions:**
+   - **Detaching:** If you want to close the terminal window on your laptop but leave the script running in the background, press `Ctrl + ]`. The session will remain active and visible on your phone.
+   - **Deleting / Exiting:** To completely kill a session and remove it from the active list, just type `exit` inside the session and press Enter. 
 
 ## Revoking Access
 
