@@ -31,6 +31,8 @@ const PORT = 8443;
 const OTP_ATTEMPT_LIMIT = 5;
 const OTP_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
 const TOKEN_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12 hours
+const MAX_SESSIONS = 10;
+const SESSION_NAME_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 
 // Regenerated each server restart, never persisted.
 const hmacSecret = crypto.randomBytes(32);
@@ -39,7 +41,16 @@ const sessionOtp = crypto.randomInt(100000, 999999).toString();
 // In-memory security and process stores
 const activeNonces = new Set();
 const otpAttempts = new Map(); // IP -> { count, cooldownUntil }
-const activePtys = new Map();  // sessionId -> Set(ptyProcess)
+const activeSessions = new Map();  // sessionId -> ptyProcess
+
+// CLI Admin Token
+const adminToken = crypto.randomBytes(32).toString('hex');
+const adminTokenPath = require('path').join(os.homedir(), '.remoteterm_token');
+try {
+  fs.writeFileSync(adminTokenPath, adminToken, { mode: 0o600 });
+} catch (e) {
+  console.warn('[WARNING] Failed to write .remoteterm_token. Local CLI client may not work.');
+}
 
 // 2. TAILSCALE BINDING CHECK
 function getTailscaleIp() {
@@ -138,9 +149,23 @@ try {
 }
 
 // Create HTTPS Server
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-XSS-Protection': '1; mode=block',
+  'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com; connect-src 'self' wss:;"
+};
+
 const server = https.createServer(serverOptions, (req, res) => {
   const pathname = req.url.split('?')[0];
   console.log(`[HTTP] ${req.method} ${req.url} (Pathname: ${pathname}) from IP: ${req.socket.remoteAddress}`);
+  
+  // Apply security headers to all responses
+  for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
+    res.setHeader(header, value);
+  }
+  
   if (pathname === '/' || pathname === '/index.html') {
     fs.readFile('index.html', (err, data) => {
       if (err) {
@@ -190,17 +215,15 @@ process.stdin.on('data', (data) => {
       }
     }
     
-    // Terminate all spawned PTY wrappers (tmux sessions remain active, only attachment layers die)
-    for (const [sessionId, ptySet] of activePtys.entries()) {
-      for (const ptyProcess of ptySet) {
-        try {
-          ptyProcess.kill();
-        } catch (err) {
-          // Process may already be dead
-        }
+    // Terminate all sessions
+    for (const [sessionId, ptyProcess] of activeSessions.entries()) {
+      try {
+        ptyProcess.kill();
+      } catch (err) {
+        // Process may already be dead
       }
     }
-    activePtys.clear();
+    activeSessions.clear();
     console.log('[REVOCATION] All connected sessions and access tokens successfully terminated.');
   }
 });
@@ -295,13 +318,37 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
+    // B2. CLI ADMIN AUTHENTICATION
+    if (message.type === 'auth_admin') {
+      const token = String(message.token || '');
+      // Hash to prevent timing attacks, though it's local
+      const isTokenValid = crypto.timingSafeEqual(
+        crypto.createHash('sha256').update(token).digest(),
+        crypto.createHash('sha256').update(adminToken).digest()
+      );
+
+      if (isTokenValid) {
+        clearTimeout(authTimeout);
+        ws.isAuthenticated = true;
+        // Admin connections don't use nonces since they are strictly local and don't get revoked by remote phone actions
+        ws.isAdmin = true;
+        console.log(`[AUTH] Successful CLI admin connection for IP: ${clientIp}`);
+        ws.send(JSON.stringify({ type: 'auth_success' }));
+      } else {
+        console.warn(`[SECURITY] Refused invalid admin token from IP: ${clientIp}`);
+        ws.send(JSON.stringify({ type: 'error', message: 'Admin token invalid.' }));
+        ws.close();
+      }
+      return;
+    }
+
     // =========================================================================
     // CRITICAL SECURITY ENFORCEMENT POINT
     // No message below this comment block can be executed without verifying:
     // 1. Connection is authenticated (ws.isAuthenticated).
-    // 2. The authentication token nonce exists in the active (non-revoked) set.
+    // 2. The authentication token nonce exists in the active (non-revoked) set (or it's an admin).
     // =========================================================================
-    if (!ws.isAuthenticated || !activeNonces.has(ws.authNonce)) {
+    if (!ws.isAuthenticated || (!ws.isAdmin && !activeNonces.has(ws.authNonce))) {
       console.warn(`[SECURITY] Unauthenticated action request from ${clientIp}. Terminating connection.`);
       ws.close();
       return;
@@ -309,123 +356,130 @@ wss.on('connection', (ws, req) => {
 
     // C. SESSION DISCOVERY
     if (message.type === 'list_sessions') {
-      const tmuxCmd = process.platform === 'win32' ? 'wsl tmux' : 'tmux';
-      // Execute tmux list-sessions safely (we don't interpolate client input here)
-      exec(`${tmuxCmd} list-sessions`, (err, stdout, stderr) => {
-        const sessions = [];
-        if (!err && stdout) {
-          const lines = stdout.split('\n');
-          for (const line of lines) {
-            // Match session name. Format example: "my-session: 2 windows (created Thu Jul 16 ...)"
-            const match = line.match(/^([^:]+):/);
-            if (match) {
-              sessions.push(match[1]);
+      const sessions = Array.from(activeSessions.keys());
+      ws.send(JSON.stringify({ type: 'sessions_list', sessions }));
+      return;
+    }
+
+    // C2. SESSION CREATION
+    if (message.type === 'create_session') {
+      const targetSessionId = message.sessionId || `session_${crypto.randomBytes(4).toString('hex')}`;
+      
+      // Validate session name
+      if (!SESSION_NAME_REGEX.test(targetSessionId)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Invalid session name. Use only letters, numbers, dashes, and underscores (max 64 chars).' }));
+        return;
+      }
+      
+      if (activeSessions.has(targetSessionId)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Session name already exists.' }));
+        return;
+      }
+
+      // Enforce session cap
+      if (activeSessions.size >= MAX_SESSIONS) {
+        ws.send(JSON.stringify({ type: 'error', message: `Maximum session limit (${MAX_SESSIONS}) reached. Close an existing session first.` }));
+        return;
+      }
+
+      // Validate cwd: must exist and be under user profile
+      const userProfile = process.env.USERPROFILE || process.env.HOME || '';
+      let safeCwd = userProfile;
+      if (message.cwd) {
+        const path = require('path');
+        const resolvedCwd = path.resolve(message.cwd);
+        try {
+          const stat = fs.statSync(resolvedCwd);
+          if (stat.isDirectory() && resolvedCwd.toLowerCase().startsWith(userProfile.toLowerCase())) {
+            safeCwd = resolvedCwd;
+          } else {
+            console.warn(`[SECURITY] Blocked cwd "${resolvedCwd}" (not under user profile). Falling back to home.`);
+          }
+        } catch (e) {
+          console.warn(`[SECURITY] Blocked cwd "${resolvedCwd}" (does not exist). Falling back to home.`);
+        }
+      }
+
+      console.log(`[PTY] Spawning new native Windows session "${targetSessionId}" for IP: ${clientIp}`);
+      
+      try {
+        const isWin = process.platform === 'win32';
+        const shell = isWin ? 'powershell.exe' : 'bash';
+        
+        const ptyProcess = pty.spawn(shell, [], {
+          name: 'xterm-256color',
+          cols: message.cols || 80,
+          rows: message.rows || 24,
+          cwd: safeCwd,
+          env: process.env
+        });
+
+        activeSessions.set(targetSessionId, ptyProcess);
+
+        // Pipe PTY output to all attached clients
+        ptyProcess.onData((data) => {
+          for (const client of wss.clients) {
+            if (client.attachedSessionId === targetSessionId && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ type: 'pty_data', data }));
             }
           }
-        }
-        
-        // Respond with tmux sessions. Do not leak raw errors or stderr to client
-        ws.send(JSON.stringify({ type: 'sessions_list', sessions }));
-      });
+        });
+
+        ptyProcess.onExit(({ exitCode }) => {
+          console.log(`[PTY] Session "${targetSessionId}" exited (Code: ${exitCode}).`);
+          activeSessions.delete(targetSessionId);
+          for (const client of wss.clients) {
+            if (client.attachedSessionId === targetSessionId && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ type: 'pty_exit' }));
+              client.attachedSessionId = null;
+            }
+          }
+        });
+
+        // Tell client to refresh list
+        ws.send(JSON.stringify({ type: 'session_created', sessionId: targetSessionId }));
+
+      } catch (ptyErr) {
+        console.error('[PTY] Error spawning pseudo-terminal:', ptyErr);
+        ws.send(JSON.stringify({ type: 'error', message: 'Failed to create session.' }));
+      }
       return;
     }
 
     // D. SESSION ATTACHMENT
     if (message.type === 'attach') {
       const targetSessionId = String(message.sessionId || '');
-      const tmuxCmd = process.platform === 'win32' ? 'wsl tmux' : 'tmux';
 
-      // Verify session list first to enforce allowlist validation
-      exec(`${tmuxCmd} list-sessions`, (err, stdout, stderr) => {
-        const allowedSessions = [];
-        if (!err && stdout) {
-          const lines = stdout.split('\n');
-          for (const line of lines) {
-            const match = line.match(/^([^:]+):/);
-            if (match) {
-              allowedSessions.push(match[1]);
-            }
-          }
-        }
+      // CRITICAL ALLOWLIST CHECK: Reject input if it is not on the active sessions list
+      if (!activeSessions.has(targetSessionId)) {
+        console.warn(`[SECURITY] Blocked unauthorized attach attempt to session "${targetSessionId}" from IP ${clientIp}`);
+        ws.send(JSON.stringify({ type: 'error', message: 'Session ID is invalid or not running.' }));
+        return;
+      }
 
-        // CRITICAL ALLOWLIST CHECK: Reject input if it is not on the active tmux sessions list
-        if (!allowedSessions.includes(targetSessionId)) {
-          console.warn(`[SECURITY] Blocked unauthorized attach attempt to session "${targetSessionId}" from IP ${clientIp}`);
-          ws.send(JSON.stringify({ type: 'error', message: 'Session ID is invalid or not running.' }));
-          return;
-        }
+      ws.attachedSessionId = targetSessionId;
+      console.log(`[PTY] Client ${clientIp} attached to session "${targetSessionId}"`);
 
-        // If client was already attached to a pty, clean it up first
-        if (ws.ptyProcess) {
-          cleanupPtyConnection(ws);
-        }
-
-        console.log(`[PTY] Spawning attachment process for session "${targetSessionId}" for IP: ${clientIp}`);
-        
-        try {
-          // Spawn the pty wrapper using node-pty. Run in tmux attach mode.
-          const isWin = process.platform === 'win32';
-          const wslPath = isWin ? `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\wsl.exe` : '';
-          const ptyProcess = pty.spawn(
-            isWin ? wslPath : 'tmux',
-            isWin ? ['tmux', 'attach-session', '-t', targetSessionId] : ['attach-session', '-t', targetSessionId],
-            {
-              name: 'xterm-256color',
-              cols: message.cols || 80,
-              rows: message.rows || 24,
-              cwd: process.env.HOME || process.env.USERPROFILE || '.',
-              env: process.env
-            }
-          );
-
-          ws.ptyProcess = ptyProcess;
-          ws.attachedSessionId = targetSessionId;
-
-          // Track in activePtys Map
-          if (!activePtys.has(targetSessionId)) {
-            activePtys.set(targetSessionId, new Set());
-          }
-          activePtys.get(targetSessionId).add(ptyProcess);
-
-          // Pipe PTY output to client WebSocket
-          ptyProcess.onData((data) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'pty_data', data }));
-            }
-          });
-
-          ptyProcess.onExit(({ exitCode, signal }) => {
-            console.log(`[PTY] Session "${targetSessionId}" attachment process exited (Code: ${exitCode}).`);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'pty_exit' }));
-            }
-            cleanupPtyConnection(ws);
-          });
-
-        } catch (ptyErr) {
-          console.error('[PTY] Error spawning pseudo-terminal:', ptyErr);
-          ws.send(JSON.stringify({ type: 'error', message: 'Failed to initialize terminal interface.' }));
-        }
-      });
+      // Optionally send a clear screen or initial message since we don't have scrollback
+      ws.send(JSON.stringify({ type: 'pty_data', data: '\r\n[Attached to session: ' + targetSessionId + ']\r\n' }));
       return;
     }
 
     // E. INPUT INJECTION (PTY write)
     if (message.type === 'pty_input') {
-      if (ws.ptyProcess) {
-        ws.ptyProcess.write(message.data);
+      if (ws.attachedSessionId && activeSessions.has(ws.attachedSessionId)) {
+        activeSessions.get(ws.attachedSessionId).write(message.data);
       }
       return;
     }
 
     // F. TERMINAL RESIZE
     if (message.type === 'resize') {
-      if (ws.ptyProcess) {
+      if (ws.attachedSessionId && activeSessions.has(ws.attachedSessionId)) {
         const cols = parseInt(message.cols);
         const rows = parseInt(message.rows);
         if (!isNaN(cols) && !isNaN(rows) && cols > 0 && rows > 0) {
-          // Resize only this specific client's node-pty process.
-          ws.ptyProcess.resize(cols, rows);
+          activeSessions.get(ws.attachedSessionId).resize(cols, rows);
         }
       }
       return;
@@ -466,27 +520,7 @@ wss.on('connection', (ws, req) => {
 });
 
 function cleanupPtyConnection(ws) {
-  if (ws.ptyProcess) {
-    const ptyProcess = ws.ptyProcess;
-    const sessionId = ws.attachedSessionId;
-    ws.ptyProcess = null;
-    ws.attachedSessionId = null;
-
-    try {
-      ptyProcess.kill();
-    } catch (err) {
-      // already terminated
-    }
-
-    // Remove from tracking Map
-    if (sessionId && activePtys.has(sessionId)) {
-      const ptySet = activePtys.get(sessionId);
-      ptySet.delete(ptyProcess);
-      if (ptySet.size === 0) {
-        activePtys.delete(sessionId);
-      }
-    }
-  }
+  ws.attachedSessionId = null;
 }
 
 // 7. START SERVER

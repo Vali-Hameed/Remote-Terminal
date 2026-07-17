@@ -5,7 +5,7 @@ let fitAddon = null;
 let currentSessionId = null;
 let isReconnecting = false;
 let pingInterval = null;
-let isTmuxCopyMode = false;
+
 
 // UI ELEMENTS
 const authScreen = document.getElementById('auth-screen');
@@ -17,6 +17,7 @@ const authBtn = document.getElementById('auth-btn');
 const sessionsList = document.getElementById('sessions-list');
 const refreshBtn = document.getElementById('refresh-btn');
 const logoutBtn = document.getElementById('logout-btn');
+const newSessionBtn = document.getElementById('new-session-btn');
 
 const termBackBtn = document.getElementById('term-back-btn');
 const sessionTitle = document.getElementById('session-title');
@@ -88,6 +89,17 @@ window.addEventListener('DOMContentLoaded', () => {
       socket.send(JSON.stringify({ type: 'list_sessions' }));
     }
   });
+  
+  if (newSessionBtn) {
+    newSessionBtn.addEventListener('click', () => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        const name = prompt("Enter a name for the new Windows session (leave blank for auto-generated):");
+        if (name !== null) {
+          socket.send(JSON.stringify({ type: 'create_session', sessionId: name.trim() }));
+        }
+      }
+    });
+  }
   
   logoutBtn.addEventListener('click', triggerLogout);
   termLogoutBtn.addEventListener('click', triggerLogout);
@@ -162,6 +174,15 @@ function connectWebSocket() {
         
       case 'sessions_list':
         renderSessions(msg.sessions);
+        break;
+        
+      case 'session_created':
+        showNotification('Session created.', 'success');
+        if (msg.sessionId) {
+          attachToSession(msg.sessionId);
+        } else {
+          socket.send(JSON.stringify({ type: 'list_sessions' }));
+        }
         break;
         
       case 'pty_data':
@@ -244,9 +265,9 @@ function renderSessions(sessions) {
   if (!sessions || sessions.length === 0) {
     sessionsList.innerHTML = `
       <div class="empty-state">
-        <p>No active tmux sessions found.</p>
+        <p>No active Windows sessions found.</p>
         <p style="font-size: 12px; margin-top: 6px; color: var(--text-muted);">
-          Run <code>tmux new -s &lt;name&gt;</code> on your laptop to start one.
+          Click "New Windows Session" to create one.
         </p>
       </div>
     `;
@@ -269,7 +290,7 @@ function renderSessions(sessions) {
         <div class="session-icon">
           <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
         </div>
-        <span class="session-name">${session}</span>
+        <span class="session-name"></span>
       </div>
       <div class="session-actions">
         <button class="btn-tab-link" title="Open in new browser tab">
@@ -277,6 +298,9 @@ function renderSessions(sessions) {
         </button>
       </div>
     `;
+    
+    // Safely set session name via textContent (prevents XSS)
+    item.querySelector('.session-name').textContent = session;
     
     // Handle new tab link click
     const newTabBtn = item.querySelector('.btn-tab-link');
@@ -294,7 +318,6 @@ function attachToSession(sessionId) {
   currentSessionId = sessionId;
   sessionTitle.textContent = sessionId;
   showScreen('terminal-screen');
-  isTmuxCopyMode = false;
   
   // Initialize Xterm.js
   const container = document.getElementById('terminal-container');
@@ -348,23 +371,7 @@ function attachToSession(sessionId) {
   
   function scrollTerminal(linesToScroll) {
     if (!term) return;
-    if (term.buffer.active.type === 'alternate') {
-      if (linesToScroll < 0 && !isTmuxCopyMode) {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'pty_input', data: '\x02[' }));
-        }
-        isTmuxCopyMode = true;
-      }
-      const key = linesToScroll > 0 ? '\x1b[B' : '\x1b[A';
-      const count = Math.abs(linesToScroll);
-      for (let i = 0; i < count; i++) {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'pty_input', data: key }));
-        }
-      }
-    } else {
-      term.scrollLines(linesToScroll);
-    }
+    term.scrollLines(linesToScroll);
   }
   
   function stopMomentum() {
@@ -422,14 +429,7 @@ function attachToSession(sessionId) {
   }, { passive: false });
   
   touchOverlay.addEventListener('touchend', (e) => {
-    // If they just tapped the screen without swiping, auto-exit copy mode
-    if (!didSwipe) {
-      if (isTmuxCopyMode && socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'pty_input', data: 'q' }));
-        isTmuxCopyMode = false;
-      }
-    }
-    
+    // Basic momentum scrolling
     if (Math.abs(velocityY) > 0.08) {
       let v = velocityY;
       let acc = 0;
@@ -457,10 +457,6 @@ function attachToSession(sessionId) {
 
   // Handle desktop clicks / normal taps on the overlay
   touchOverlay.addEventListener('click', (e) => {
-    if (isTmuxCopyMode && socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: 'pty_input', data: 'q' }));
-      isTmuxCopyMode = false;
-    }
     touchOverlay.style.pointerEvents = 'none';
     term.focus();
     // Attempt to click the element underneath (xterm's textarea)
@@ -473,12 +469,6 @@ function attachToSession(sessionId) {
   const fabKeyboard = document.getElementById('fab-keyboard');
   if (fabKeyboard) {
     fabKeyboard.addEventListener('click', () => {
-      if (isTmuxCopyMode && socket && socket.readyState === WebSocket.OPEN) {
-        // Exit copy mode
-        socket.send(JSON.stringify({ type: 'pty_input', data: 'q' }));
-        isTmuxCopyMode = false;
-      }
-      
       // Temporarily disable overlay so focus/clicks can pierce through
       touchOverlay.style.pointerEvents = 'none';
       term.focus();
@@ -504,8 +494,7 @@ function attachToSession(sessionId) {
   
   // Pipe xterm input -> websocket
   term.onData(data => {
-    // Reset copy-mode state if user types/sends keyboard data
-    isTmuxCopyMode = false;
+    // Send keyboard data to server
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'pty_input', data }));
     }
@@ -530,7 +519,6 @@ function disconnectTerminal() {
   }
   fitAddon = null;
   currentSessionId = null;
-  isTmuxCopyMode = false;
 }
 
 // 120ms DEBOUNCED RESIZE HANDLER
