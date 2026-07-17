@@ -64,9 +64,9 @@ npm link
 <summary><b>3. Generate an SSL Certificate</b></summary>
 <br>
 
-Since the app uses secure WebSockets (`wss://`) and HTTPS, generate a self-signed certificate in the project root:
+Since the app uses secure WebSockets (`wss://`) and HTTPS, generate a self-signed certificate into the new `certs/` directory:
 ```bash
-openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"
+openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -sha256 -days 365 -nodes -subj "/CN=localhost"
 ```
 </details>
 
