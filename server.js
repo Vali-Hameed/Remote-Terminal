@@ -225,6 +225,10 @@ process.stdin.on('data', (data) => {
     }
     activeSessions.clear();
     console.log('[REVOCATION] All connected sessions and access tokens successfully terminated.');
+  } else if (command === 'show-otp') {
+    console.log(`\n[AUTH] Current Remote Pairing Code (OTP): ${sessionOtp}\n`);
+  } else if (command) {
+    console.log(`[CLI] Unknown command: "${command}". Available commands: show-otp, revoke-all`);
   }
 });
 

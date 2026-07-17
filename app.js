@@ -140,7 +140,14 @@ function connectWebSocket() {
       }
     }, 30000);
     
-    const savedToken = localStorage.getItem('remote_term_token');
+    let savedToken = localStorage.getItem('remote_term_token');
+    
+    // Fallback to cookie if localStorage was cleared (common on iOS for self-signed certs)
+    if (!savedToken) {
+      const match = document.cookie.match(/(?:^|; )remote_term_token=([^;]+)/);
+      if (match) savedToken = match[1];
+    }
+    
     if (savedToken) {
       socket.send(JSON.stringify({ type: 'auth_token', token: savedToken }));
     } else {
@@ -160,6 +167,8 @@ function connectWebSocket() {
       case 'auth_success':
         if (msg.token) {
           localStorage.setItem('remote_term_token', msg.token);
+          // Set cookie as backup, expires in 12 hours
+          document.cookie = `remote_term_token=${msg.token}; max-age=${12 * 60 * 60}; path=/; SameSite=Lax; Secure`;
         }
         showNotification('Authenticated successfully', 'success');
         
@@ -201,6 +210,7 @@ function connectWebSocket() {
       case 'revoked':
         showNotification(msg.message || 'Credentials revoked.', 'error');
         localStorage.removeItem('remote_term_token');
+        document.cookie = 'remote_term_token=; max-age=0; path=/';
         disconnectTerminal();
         showScreen('auth-screen');
         break;
@@ -209,6 +219,7 @@ function connectWebSocket() {
         showNotification(msg.message, 'error');
         if (msg.message.includes('expired') || msg.message.includes('invalid')) {
           localStorage.removeItem('remote_term_token');
+          document.cookie = 'remote_term_token=; max-age=0; path=/';
           showScreen('auth-screen');
         }
         break;
