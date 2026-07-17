@@ -139,9 +139,11 @@ function verifyToken(tokenString) {
 // 4. SSL SETUP
 let serverOptions;
 try {
+  const certPath = path.join(__dirname, '../certs/cert.pem');
+  const keyPath = path.join(__dirname, '../certs/key.pem');
   serverOptions = {
-    key: fs.readFileSync('key.pem'),
-    cert: fs.readFileSync('cert.pem')
+    cert: fs.readFileSync(certPath),
+    key: fs.readFileSync(keyPath)
   };
 } catch (err) {
   console.error('[CRITICAL ERROR] Failed to load SSL files (key.pem / cert.pem).');
@@ -168,7 +170,7 @@ const server = https.createServer(serverOptions, (req, res) => {
   }
   
   if (pathname === '/' || pathname === '/index.html') {
-    fs.readFile('index.html', (err, data) => {
+    fs.readFile(path.join(__dirname, '../public/index.html'), (err, data) => {
       if (err) {
         res.writeHead(500);
         res.end('Error loading index.html');
@@ -177,13 +179,23 @@ const server = https.createServer(serverOptions, (req, res) => {
         res.end(data);
       }
     });
-  } else if (pathname === '/app.js') {
-    fs.readFile('app.js', (err, data) => {
+  } else if (pathname === '/js/app.js') {
+    fs.readFile(path.join(__dirname, '../public/js/app.js'), (err, data) => {
       if (err) {
         res.writeHead(500);
         res.end('Error loading app.js');
       } else {
         res.writeHead(200, { 'Content-Type': 'application/javascript' });
+        res.end(data);
+      }
+    });
+  } else if (pathname === '/css/style.css') {
+    fs.readFile(path.join(__dirname, '../public/css/style.css'), (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        res.end('Error loading style.css');
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
         res.end(data);
       }
     });
