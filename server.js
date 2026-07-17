@@ -36,7 +36,7 @@ const SESSION_NAME_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 
 // Regenerated each server restart, never persisted.
 const hmacSecret = crypto.randomBytes(32);
-const sessionOtp = crypto.randomInt(100000, 999999).toString();
+let sessionOtp = crypto.randomInt(100000, 999999).toString();
 
 // In-memory security and process stores
 const activeNonces = new Set();
@@ -288,6 +288,11 @@ wss.on('connection', (ws, req) => {
         ws.authNonce = nonce;
 
         console.log(`[AUTH] Successful OTP pairing. Issued token for IP: ${clientIp}`);
+        
+        // Consume and regenerate the OTP for strict one-time use
+        sessionOtp = crypto.randomInt(100000, 999999).toString();
+        console.log(`[AUTH] OTP consumed and regenerated for security. Use 'show-otp' to retrieve the new code if pairing another device.`);
+
         ws.send(JSON.stringify({ type: 'auth_success', token }));
       } else {
         // Increment attempts
