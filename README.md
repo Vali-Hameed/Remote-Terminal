@@ -2,9 +2,9 @@
   <h1>📱 Remote Terminal Mirroring</h1>
   <p><b>A native Windows terminal session manager. Detach and monitor over Tailscale.</b></p>
   
-  [![Node.js](https://img.shields.io/badge/Node.js-16.0%2B-success.svg)](https://nodejs.org/)
-  ![Platform](https://img.shields.io/badge/Platform-Windows%20%26%20Unix-blue.svg)
-  [![Tailscale](https://img.shields.io/badge/Network-Tailscale-lightgrey.svg)](https://tailscale.com)
+  [![Node.js](https://img.shields.io/badge/Node.js-16.0%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+  ![Platform](https://img.shields.io/badge/Platform-Windows_%26_Unix-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+  [![Tailscale](https://img.shields.io/badge/Network-Tailscale-1C1C1C?style=for-the-badge&logo=tailscale&logoColor=white)](https://tailscale.com)
 </div>
 
 <br>
