@@ -3,7 +3,7 @@
   <p><b>A native Windows terminal session manager. Detach and monitor over Tailscale.</b></p>
   
   [![Node.js](https://img.shields.io/badge/Node.js-16.0%2B-success.svg)](https://nodejs.org/)
-  [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://microsoft.com/windows)
+  ![Platform](https://img.shields.io/badge/Platform-Windows%20%26%20Unix-blue.svg)
   [![Tailscale](https://img.shields.io/badge/Network-Tailscale-lightgrey.svg)](https://tailscale.com)
 </div>
 
